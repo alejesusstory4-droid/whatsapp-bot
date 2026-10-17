@@ -17,7 +17,7 @@ const logger = require('./utils/logger');
 const helpers = require('./utils/helpers');
 
 // TU NÚMERO DE WHATSAPP (sin el +)
-const PHONE_NUMBER = '573223138326';
+const PHONE_NUMBER = '51980856444';
 
 // Cargar todos los comandos dinámicamente
 const commands = new Map();
