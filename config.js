@@ -7,8 +7,8 @@ module.exports = {
   botName: '🤖 Bot Premium',
   
   // Propietario del bot (tu número de WhatsApp)
-  owner: '573223138326@s.whatsapp.net',
-  ownerNumber: '573223138326',
+  owner: '51980856444@s.whatsapp.net',
+  ownerNumber: '51980856444',
   
   // ========================================
   // 🎵 YOUTUBE API CONFIGURATION
