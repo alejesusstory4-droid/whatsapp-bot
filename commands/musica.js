@@ -3,7 +3,7 @@ const axios = require('axios');
 const logger = require('../utils/logger');
 
 module.exports = {
-  name: 'musica',
+  name: 'music',
   description: 'Busca música/video en YouTube y manda el audio',
 
   async execute(sock, message, args) {
