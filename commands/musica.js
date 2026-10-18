@@ -1,79 +1,95 @@
-// commands/musica.js - Comando con vista previa de YouTube
+// commands/musica.js - Comando con vista previa de YouTube + Audio
 const axios = require('axios');
 const logger = require('../utils/logger');
 
 module.exports = {
   name: 'musica',
-  description: 'Busca música/video en YouTube y muestra vista previa',
-  
+  description: 'Busca música/video en YouTube y manda el audio',
+
   async execute(sock, message, args) {
     try {
-      // Verificar que se haya proporcionado un nombre
       if (args.length === 0) {
-        return await sock.sendMessage(message.key.remoteJid, { 
-          text: '❌ Por favor especifica el nombre de la canción o video.\n\n*Ejemplo:* !musica despacito' 
+        return await sock.sendMessage(message.key.remoteJid, {
+          text: `❌ Por favor especifica el nombre de la canción o video.\n\nEjemplo: *!musica despacito*`
         });
       }
 
       const query = args.join(' ');
-
-      // Enviar mensaje de búsqueda
-      await sock.sendMessage(message.key.remoteJid, { 
-        text: `🔍 Buscando: *${query}*...\n⏳ Esto puede tomar unos segundos...` 
+      
+      await sock.sendMessage(message.key.remoteJid, {
+        text: `🔍 Buscando: *${query}*... Esto puede tomar unos segundos...`
       });
 
-      try {
-        // Buscar en YouTube usando scraping simple
-        const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
-        
-        const response = await axios.get(searchUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-          }
-        });
-
-        const html = response.data;
-        
-        // Buscar el primer video ID en el HTML
-        const videoIdMatch = html.match(/"videoId":"([^"]+)"/);
-        
-        if (videoIdMatch && videoIdMatch[1]) {
-          const videoId = videoIdMatch[1];
-          const videoUrl = `https://youtu.be/${videoId}`;
-          
-          // Enviar el enlace - WhatsApp generará vista previa automáticamente
-          await sock.sendMessage(message.key.remoteJid, { 
-            text: `🎵 *Resultado para:* ${query}\n\n${videoUrl}\n\n💡 *Toca la imagen para reproducir el video*\n\n_Vista previa generada automáticamente por WhatsApp_`
-          });
-
-          logger.success(`Video encontrado: ${videoUrl}`);
-        } else {
-          // Si no se encuentra, enviar enlace de búsqueda
-          await sock.sendMessage(message.key.remoteJid, { 
-            text: `🔍 *Búsqueda:* ${query}\n\n` +
-                  `No pude encontrar un resultado exacto, pero aquí está el enlace de búsqueda:\n\n` +
-                  `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}\n\n` +
-                  `💡 Toca el enlace para ver todos los resultados`
-          });
-        }
-        
-      } catch (searchError) {
-        // Si falla el scraping, enviar enlace de búsqueda manual
-        const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
-        
-        await sock.sendMessage(message.key.remoteJid, { 
-          text: `🔍 *Búsqueda:* ${query}\n\n` +
-                `Aquí está el enlace de búsqueda:\n\n${searchUrl}\n\n` +
-                `💡 Toca el enlace para ver los resultados`
+      // 1. BUSCAR USANDO TU API KEY DE YOUTUBE
+      const apiKey = process.env.YOUTUBE_API_KEY || process.env.GOOGLE_API_KEY;
+      if (!apiKey) {
+        return await sock.sendMessage(message.key.remoteJid, {
+          text: `❌ Falta configurar YOUTUBE_API_KEY en Railway`
         });
       }
+
+      const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=${encodeURIComponent(query)}&key=${apiKey}`;
       
-    } catch (error) {
-      logger.error('Error en comando música:', error.message);
-      
-      await sock.sendMessage(message.key.remoteJid, { 
-        text: '❌ Ocurrió un error al buscar. Intenta de nuevo con otro término de búsqueda.' 
+      let response;
+      try {
+        response = await axios.get(searchUrl);
+      } catch (e) {
+        logger.error(`Error con YouTube API: ${e.message}`);
+        return await sock.sendMessage(message.key.remoteJid, {
+          text: `❌ Error con YouTube API: ${e.response?.data?.error?.message || e.message}`
+        });
+      }
+
+      const video = response.data.items[0];
+      if (!video) {
+        return await sock.sendMessage(message.key.remoteJid, { text: `❌ No encontré nada para: ${query}` });
+      }
+
+      const videoId = video.id.videoId;
+      const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      const title = video.snippet.title;
+      const channel = video.snippet.channelTitle;
+      const thumbnail = video.snippet.thumbnails.high.url;
+
+      // 2. MANDAR VISTA PREVIA
+      await sock.sendMessage(message.key.remoteJid, {
+        image: { url: thumbnail },
+        caption: `🎵 *${title}*\n📺 Canal: ${channel}\n🔗 ${videoUrl}\n\n⬇️ Descargando audio...`
       });
+
+      // 3. DESCARGAR AUDIO - API NUEVA QUE SI FUNCIONA
+      try {
+        // Intento 1
+        let dlApi = `https://api.vreden.my.id/api/ytmp3?url=${videoUrl}`;
+        let dlRes = await axios.get(dlApi);
+        
+        let audioUrl = dlRes.data?.result?.download || dlRes.data?.result?.url || dlRes.data?.data?.url;
+
+        // Intento 2 si falla el 1
+        if (!audioUrl) {
+          let dlApi2 = `https://api.dorratz.com/v2/yt-mp3?url=${videoUrl}`;
+          let dlRes2 = await axios.get(dlApi2);
+          audioUrl = dlRes2.data?.data?.url;
+        }
+
+        if (!audioUrl) throw new Error('No se pudo obtener link de descarga');
+
+        await sock.sendMessage(message.key.remoteJid, {
+          audio: { url: audioUrl },
+          mimetype: 'audio/mpeg',
+          fileName: `${title}.mp3`
+        }, { quoted: message });
+
+      } catch (e) {
+        logger.error(`Error descargando: ${e.message}`);
+        await sock.sendMessage(message.key.remoteJid, {
+          text: `✅ Encontré: *${title}*\n${videoUrl}\n\n⚠️ No pude mandar el audio automático (error de descarga: ${e.message}).\n\nPrueba con el link directo.`
+        });
+      }
+
+    } catch (err) {
+      logger.error(err);
+      await sock.sendMessage(message.key.remoteJid, { text: `❌ Error: ${err.message}` });
     }
   }
 };
